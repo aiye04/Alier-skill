@@ -80,45 +80,6 @@ Avoid claiming that code ran, screenshots were captured, tests passed, or data w
 7. Save a new `.docx` file instead of overwriting the original.
 8. Return the edited file and a short change list.
 
-## Windows UTF-8 safe mode
-
-When this skill runs on Windows and the task involves Chinese file names, Chinese paths, or Chinese report content, use UTF-8 safe mode by default.
-
-Do not pass Chinese paths or Chinese document text directly through inline Python, `python -`, `python -c`, PowerShell pipes, shell heredocs, or command-line arguments. Windows console and PowerShell pipeline encoding can silently turn Chinese characters into `?`, causing invalid paths such as `G:\Homework\????\??_??__??3.docx`.
-
-Required safe practices:
-
-- Prefer changing `workdir` to the target folder and locating files with `Path.cwd().glob()` / directory enumeration instead of hard-coding Chinese absolute paths inside Python.
-- For non-trivial `.docx` work, write or update a UTF-8 `.py` script file and run it with `python -X utf8 script.py`; do not pipe the script body through stdin when it contains Chinese.
-- If Chinese paths or text must cross a process boundary, write them to a UTF-8 JSON file first, then read that file in Python with `encoding="utf-8"`.
-- Keep temporary upload/interop file names ASCII-only when a browser, CLI, or web upload bridge may receive the path.
-- In PowerShell-based checks, prefer `login:false` / no-profile execution where available so user profile execution-policy errors do not pollute output.
-- Validate generated reports by structural facts first: table count, row/column count, filled cover fields, blank teacher/evaluator fields, paragraph styles, and image count. Do not rely on terminal-printed Chinese text as the only verification.
-
-Bad patterns:
-
-```powershell
-# Do not pipe a Python script containing Chinese paths through stdin.
-# Do not put paths like G:\Homework\人工智能\学号_姓名__实验3.docx inside `python -` or `python -c`.
-```
-
-Good patterns:
-
-```powershell
-python -X utf8 fill_report.py
-```
-
-```python
-from pathlib import Path
-candidates = list(Path.cwd().glob("*.docx"))
-# Select by stable facts such as template size, modified time, or known ASCII companion metadata.
-```
-
-```python
-import json
-from pathlib import Path
-args = json.loads(Path("docx_args.json").read_text(encoding="utf-8"))
-```
 ## Experiment report rules
 
 For student experiment-report templates:
