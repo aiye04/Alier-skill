@@ -15,6 +15,24 @@ Keep the original title hierarchy, numbering, tables, paragraph styles, fonts, s
 
 When editing `.docx`, prefer targeted text replacement and insertion. Do not rebuild the whole document unless there is no safer option. When adding text, copy the style of the neighboring paragraph, table cell, or same-level heading.
 
+## Non-negotiable preservation gate
+
+Before writing to a `.docx`, perform a preservation gate and classify each target section as one of:
+
+- **LOCKED existing content**: non-empty prose, numbered lists, tables, headings, instructions, or requirement text that already appears meaningful. Leave it unchanged.
+- **FILL TARGET**: blank cells, placeholder text, explicit "待填写/XXX" areas, empty paragraphs after a heading, or locations the user explicitly told you to fill.
+- **APPEND TARGET**: a heading or marker whose existing text should remain, with new content inserted after it, such as "运行结果展示", "操作异常问题与解决方案", or "实验总结".
+
+If a section contains existing complete content and also needs more material, append after the existing content instead of replacing it.
+
+Do not use a broad "clear cell then rebuild" strategy for templates. This destroys the teacher's original wording, numbering, indentation, and fonts. Only remove text that is clearly a placeholder or explicitly requested for deletion.
+
+For Chinese experiment report templates, common headings such as "实验目的与要求", "实验原理与内容", and "实验设备与软件环境" are often teacher-provided requirements. If they already contain text, treat them as LOCKED existing content by default.
+
+When the user says to place screenshots or results under a heading, insert them below the relevant marker paragraph. Do not regenerate the whole containing table cell.
+
+If you are unsure whether content is teacher-provided or blank-to-fill, stop and ask before editing.
+
 ## Decision rules
 
 Classify every editable area before writing.
@@ -27,6 +45,10 @@ Classify every editable area before writing.
 6. Evidence fields, such as screenshots, real run results, logs, exact code output, grades, signatures, or comments from a teacher: do not fabricate.
 
 Treat strings such as `XXX`, `XXXX`, `待填写`, blank table cells, empty paragraphs under a heading, `年 月 日`, and obvious template gaps as fill targets.
+
+Preserve exact existing list numbering, including Arabic numbered lists such as `1.`, `2.`, `3.`, Chinese numbered lists, and manually typed numbering. Do not convert existing numbered lists into bullets or new paragraph styles.
+
+Preserve existing fonts and sizes. For example, if a template has a heading in SimSun 四号 and list items in SimSun 小四, inserted sibling content should copy the nearest matching paragraph style instead of using defaults.
 
 ## Missing-information policy
 
@@ -73,23 +95,91 @@ Avoid claiming that code ran, screenshots were captured, tests passed, or data w
 
 1. Inspect the document structure.
 2. Identify fixed content, blanks, placeholders, and user-requested edit areas.
-3. Identify missing blocking facts.
-4. If blocking facts are missing, ask concise questions before editing.
-5. If enough information exists, edit the file directly.
-6. Preserve formatting by copying nearby styles for inserted text.
-7. Save a new `.docx` file instead of overwriting the original.
-8. Return the edited file and a short change list.
+3. Produce an internal edit map before modifying the file:
+   - section/table cell location
+   - classification: LOCKED, FILL TARGET, or APPEND TARGET
+   - planned operation: leave unchanged, replace placeholder only, append after marker, or fill blank
+4. Identify missing blocking facts.
+5. If blocking facts are missing, ask concise questions before editing.
+6. If enough information exists, edit the file directly using targeted insertion/replacement.
+7. Preserve formatting by copying nearby styles for inserted text.
+8. Save a new `.docx` file instead of overwriting the original.
+9. Return the edited file and a short change list.
 
+When a table cell contains multiple report sections, never clear the whole cell. Locate the paragraph marker and insert after that paragraph.
+
+When using python-docx, prefer operations like "insert paragraph after this existing paragraph" and "replace only this placeholder run" over deleting all paragraphs in a cell.
+
+After editing, verify that protected original sections still match the source document text. At minimum, compare the first 100-300 characters of each LOCKED section before and after editing, and confirm the count/order of existing headings and table rows did not change.
+
+## Windows UTF-8 safe mode
+
+When this skill runs on Windows and the task involves Chinese file names, Chinese paths, or Chinese report content, use UTF-8 safe mode by default.
+
+Do not pass Chinese paths or Chinese document text directly through inline Python, `python -`, `python -c`, PowerShell pipes, shell heredocs, or command-line arguments. Windows console and PowerShell pipeline encoding can silently turn Chinese characters into `?`, causing invalid paths such as `G:\Homework\????\??_??__??3.docx`.
+
+Required safe practices:
+
+- Prefer changing `workdir` to the target folder and locating files with `Path.cwd().glob()` / directory enumeration instead of hard-coding Chinese absolute paths inside Python.
+- For non-trivial `.docx` work, write or update a UTF-8 `.py` script file and run it with `python -X utf8 script.py`; do not pipe the script body through stdin when it contains Chinese.
+- If Chinese paths or text must cross a process boundary, write them to a UTF-8 JSON file first, then read that file in Python with `encoding="utf-8"`.
+- Keep temporary upload/interop file names ASCII-only when a browser, CLI, or web upload bridge may receive the path.
+- In PowerShell-based checks, prefer `login:false` / no-profile execution where available so user profile execution-policy errors do not pollute output.
+- Validate generated reports by structural facts first: table count, row/column count, filled cover fields, blank teacher/evaluator fields, paragraph styles, and image count. Do not rely on terminal-printed Chinese text as the only verification.
+
+Bad patterns:
+
+```powershell
+# Do not pipe a Python script containing Chinese paths through stdin.
+# Do not put paths like G:\Homework\人工智能\学号_姓名__实验3.docx inside `python -` or `python -c`.
+```
+
+Good patterns:
+
+```powershell
+python -X utf8 fill_report.py
+```
+
+```python
+from pathlib import Path
+candidates = list(Path.cwd().glob("*.docx"))
+# Select by stable facts such as template size, modified time, or known ASCII companion metadata.
+```
+
+```python
+import json
+from pathlib import Path
+args = json.loads(Path("docx_args.json").read_text(encoding="utf-8"))
+```
 ## Experiment report rules
 
 For student experiment-report templates:
 
 - Fill general sections from the experiment topic and available context.
+- However, do not fill or rewrite a general section if the template already contains meaningful text for that section. In that case, leave the existing teacher-provided content unchanged and append only where the template leaves an obvious blank or marker.
 - Leave `实验成绩`, `评语`, and `教师签名` blank unless the user explicitly requests otherwise.
 - Keep `其他成员：无` unchanged when already present.
 - Do not invent screenshots, exact console output, score, teacher comments, or real execution logs.
 - If no abnormal issue is provided, write a realistic non-fabricated statement such as “本次实验未出现影响完成的异常问题；如后续运行中出现报错，可根据错误提示检查环境配置、路径和依赖版本。”
 - If the template requires deleting red instruction text and red text cannot be reliably identified, remove only clearly recognized template instructions or tell the user which parts need manual review.
+
+For "实验过程与结果":
+
+- Preserve existing requirements, prompts, and teacher instructions.
+- Insert procedure text and screenshots under the existing "运行结果展示" marker when present.
+- Use the pattern: what this step does -> screenshot -> result/verification note.
+- If the user specifies image wrapping/layout, apply it to inserted images only; do not reformat existing document content.
+
+For "操作异常问题与解决方案":
+
+- Preserve the section title.
+- If the user provides a problem list, rewrite it into the requested format only within this section.
+- Do not import unrelated problems that the user explicitly excluded, such as deployment issues when the user says not to mention deployment.
+
+For "实验总结":
+
+- Append or fill only the blank summary area.
+- Do not rewrite previous sections to make the summary more consistent.
 
 ## Requirements document rules
 
@@ -124,6 +214,10 @@ Use this style for the completion note:
 Do not:
 
 - rewrite the entire document
+- clear a populated table cell and rebuild it from scratch
+- replace existing teacher-provided experiment purpose, principle, requirements, or environment text
+- convert existing numbered lists into bullet lists
+- change existing fonts, numbering, indentation, or spacing when the content is already present
 - change layout for aesthetics
 - delete existing content without explicit permission
 - change table structure, column widths, borders, or colors unnecessarily
